@@ -1,25 +1,43 @@
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
+import sqlite3
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///motion_data.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
 
-class MotionData(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
-    motion_detected = db.Column(db.Boolean, nullable=False)
+# Conectar a la base de datos
+def get_db_connection():
+    conn = sqlite3.connect('distancia.db')
+    conn.row_factory = sqlite3.Row
+    return conn
 
-db.create_all()
+# Crear la tabla para almacenar los datos del sensor
+def create_table():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS distancia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            distancia REAL NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    motion_detected = request.form.get('motion_detected') == '1'
-    new_data = MotionData(motion_detected=motion_detected)
-    db.session.add(new_data)
-    db.session.commit()
-    return jsonify({'message': 'Data received'}), 200
+# Ruta para recibir los datos del sensor
+@app.route('/sensor', methods=['POST'])
+def sensor_data():
+    data = request.get_json()
+    distancia = data.get('distancia')
+    
+    if distancia is None:
+        return jsonify({'error': 'No se proporcionaron datos de distancia'}), 400
+    
+    conn = get_db_connection()
+    conn.execute('INSERT INTO distancia (distancia) VALUES (?)', (distancia,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'status': 'Datos almacenados correctamente'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80)
+    create_table()
+    app.run(host='0.0.0.0', port=8000)
